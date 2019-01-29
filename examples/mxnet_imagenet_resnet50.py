@@ -26,6 +26,7 @@ import horovod.mxnet as hvd
 import mxnet as mx
 import numpy as np
 from mxnet import autograd, gluon, lr_scheduler
+from mxnet.base import MXNetError
 from mxnet.io import DataBatch, DataIter
 
 
@@ -410,6 +411,7 @@ def train_module():
     mod.bind(data_shapes=train_data.provide_data,
              label_shapes=train_data.provide_label)
     mod.init_params(initializer, arg_params=arg_params, aux_params=aux_params)
+    mod.init_optimizer(kvstore=None, optimizer=opt)
 
     # Horovod: fetch and broadcast parameters
     (arg_params, aux_params) = mod.get_params()
@@ -419,6 +421,56 @@ def train_module():
         hvd.broadcast_parameters(aux_params, root_rank=0)
     mod.set_params(arg_params=arg_params, aux_params=aux_params)
 
+    # Train model
+    metric = mx.metric.Accuracy()
+    for epoch in range(args.num_epochs):
+        tic = time.time()
+        metric.reset()
+
+        nbatch = 0
+        data_iter = iter(train_data)
+        end_of_batch = False
+        next_data_batch = next(data_iter)
+        btic = time.time()
+        while not end_of_batch:
+            data_batch = next_data_batch
+            mod.forward_backward(data_batch)
+            mod.update()
+
+            if isinstance(data_batch, list):
+                mod.update_metric(metric, [db.label for db in data_batch], pre_sliced=True)
+            else:
+                mod.update_metric(metric, data_batch.label)
+
+            try:
+                # pre fetch next batch
+                next_data_batch = next(data_iter)
+                mod.prepare(next_data_batch)
+            except StopIteration:
+                end_of_batch = True
+            nbatch += 1
+
+            if args.log_interval and nbatch % args.log_interval == 0:
+                name, acc = metric.get()
+                logging.info('Epoch[%d] Rank[%d] Batch[%d]\t%s=%f',
+                             epoch, rank, nbatch, name, acc)
+                if rank == 0:
+                    batch_speed = num_workers * batch_size * args.log_interval / (time.time() - btic)
+                    logging.info('Epoch[%d] Batch[%d]\tSpeed: %.2f samples/sec',
+                                 epoch, nbatch, batch_speed)
+                btic = time.time()
+
+        elapsed = time.time() - tic
+        _, acc = metric.get()
+        logging.info('Epoch[%d] Rank[%d] Batch[%d]\tTime cost=%.2f\tTrain-accuracy=%f',
+                     epoch, rank, nbatch, elapsed, acc)
+        if rank == 0:
+            epoch_speed = num_workers * batch_size * nbatch / elapsed
+            logging.info('Epoch[%d]\tSpeed: %.2f samples/sec', epoch, epoch_speed)
+
+        train_data.reset()
+
+    """
     # Setup validation data and callback during training
     eval_data = None
     if args.eval_epoch:
@@ -442,6 +494,7 @@ def train_module():
             batch_end_callback=batch_callback,
             epoch_end_callback=epoch_callback,
             optimizer=opt)
+    """
 
     # Evaluate performance if not using synthetic data
     if args.use_rec:
@@ -454,9 +507,16 @@ def train_module():
 
 
 if __name__ == '__main__':
-    if args.mode == 'module':
-        train_module()
-    elif args.mode == 'gluon':
-        train_gluon()
-    else:
-        raise ValueError('Invalid training mode.')
+    try:
+        if args.mode == 'module':
+            train_module()
+        elif args.mode == 'gluon':
+            train_gluon()
+        else:
+            raise ValueError('Invalid training mode.')
+    except MXNetError as e:
+        if "Horovod has been shut down" not in str(e):
+            logging.info("Error found in Rank[%d]", rank)
+            raise e
+        else:
+            logging.info("Horovod shutdonw error in Rank[%d]", rank)
