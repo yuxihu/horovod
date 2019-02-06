@@ -89,6 +89,10 @@ parser.add_argument('--log-interval', type=int, default=0,
                     help='number of batches to wait before logging (default: 0)')
 parser.add_argument('--save-frequency', type=int, default=0,
                     help='frequency of model saving (default: 0)')
+parser.add_argument('--static-alloc', action='store_true', default=False,
+                    help='static memory alloc for gluon training (default: False)')
+parser.add_argument('--static-shape', action='store_true', default=False,
+                    help='static shape for gluon training (default: False)')
 
 
 args = parser.parse_args()
@@ -314,7 +318,7 @@ def train_gluon():
                      epoch, rank, top1_name, top1_acc, top5_name, top5_acc)
 
     # Hybridize and initialize model
-    net.hybridize()
+    net.hybridize(static_alloc=args.static_alloc, static_shape=args.static_shape)
     net.initialize(initializer, ctx=context)
 
     # Horovod: fetch and broadcast parameters
@@ -443,7 +447,7 @@ def train_module():
         acc_top5 = mx.metric.TopKAccuracy(5)
         res = mod.score(val_data, [acc_top1, acc_top5])
         for name, val in res:
-            logging.info('Epoch[%d] Rank[%d] Validation-%s=%f',
+            logging.info('Epoch[%d] Rank[%d]\tValidation-%s=%f',
                          args.num_epochs - 1, rank, name, val)
 
 
