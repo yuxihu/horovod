@@ -93,6 +93,8 @@ parser.add_argument('--static-alloc', action='store_true', default=False,
                     help='static memory alloc for gluon training (default: False)')
 parser.add_argument('--static-shape', action='store_true', default=False,
                     help='static shape for gluon training (default: False)')
+parser.add_argument('--optimizer', type=str, default='sgd',
+                    help='optimizer type. options are sgd, nag (default: sgd)')
 
 
 args = parser.parse_args()
@@ -292,7 +294,7 @@ optimizer_params = {'wd': args.wd,
                     'lr_scheduler': lr_sched}
 if args.dtype == 'float16':
     optimizer_params['multi_precision'] = True
-opt = mx.optimizer.create('sgd', **optimizer_params)
+opt = mx.optimizer.create(args.optimizer, **optimizer_params)
 
 # Horovod: wrap optimizer with DistributedOptimizer
 opt = hvd.DistributedOptimizer(opt)
