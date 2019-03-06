@@ -36,6 +36,28 @@ torch_mpi_lib_v2 = Extension('horovod.torch.mpi_lib_v2', [])
 mxnet_mpi_lib = Extension('horovod.mxnet.mpi_lib', [])
 
 
+if sys.version_info[0] < 3:
+    MPI_RPATH = [
+        '/home/ubuntu/anaconda3/envs/mxnet_p27/lib',
+        '/home/ec2-user/anaconda3/envs/mxnet_p27/lib'
+    ]
+    MX_RPATH = [
+        '/home/ubuntu/anaconda3/envs/mxnet_p27/lib/python2.7/site-packages/mxnet',
+        '/home/ec2-user/anaconda3/envs/mxnet_p27/lib/python2.7/site-packages/mxnet',
+        '/usr/local/lib/python2.7/site-packages/mxnet'
+    ]
+else:
+    MPI_RPATH = [
+        '/home/ubuntu/anaconda3/envs/mxnet_p36/lib',
+        '/home/ec2-user/anaconda3/envs/mxnet_p36/lib'
+    ]
+    MX_RPATH = [
+        '/home/ubuntu/anaconda3/envs/mxnet_p36/lib/python3.6/site-packages/mxnet',
+        '/home/ec2-user/anaconda3/envs/mxnet_p36/lib/python3.6/site-packages/mxnet',
+        '/usr/local/lib/python3.6/site-packages/mxnet'
+    ]
+
+
 def is_build_action():
     if len(sys.argv) <= 1:
         return False
@@ -292,6 +314,9 @@ def get_mx_flags(build_ext, cpp_flags):
     for lib in mx_libs:
         link_flags.append('-l%s' % lib)
 
+    for rpath in MX_RPATH:
+        link_flags.append('-Wl,-rpath,' + rpath)
+
     return compile_flags, link_flags
 
 
@@ -304,6 +329,8 @@ def get_mpi_flags():
         if not mpi_show_args[0].startswith('-'):
             # Open MPI and MPICH print compiler name as a first word, skip it
             mpi_show_args = mpi_show_args[1:]
+        for rpath in MPI_RPATH:
+            mpi_show_args.append('-Wl,-rpath,' + rpath)
         # strip off compiler call portion and always escape each arg
         return ' '.join(['"' + arg.replace('"', '"\'"\'"') + '"'
                          for arg in mpi_show_args])
@@ -482,6 +509,7 @@ def get_common_options(build_ext):
     cpp_flags = get_cpp_flags(build_ext)
     link_flags = get_link_flags(build_ext)
     mpi_flags = get_mpi_flags()
+    print(mpi_flags)
 
     gpu_allreduce = os.environ.get('HOROVOD_GPU_ALLREDUCE')
     if gpu_allreduce and gpu_allreduce != 'MPI' and gpu_allreduce != 'NCCL' and \
