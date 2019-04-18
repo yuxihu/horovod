@@ -52,6 +52,7 @@ class FP16Compressor(Compressor):
         if 'float' in str(tensor.dtype):
             # Only allow compression from other floating point types
             tensor_compressed = tensor.astype(np.float16, copy=False)
+            tensor_compressed.wait_to_read()
         return tensor_compressed, tensor.dtype
 
     @staticmethod
@@ -60,6 +61,7 @@ class FP16Compressor(Compressor):
         tensor_decompressed = tensor
         if 'float' in str(dtype):
             tensor_decompressed = tensor.astype(dtype, copy=False)
+            tensor_decompressed.wait_to_read()
         return tensor_decompressed
 
 
